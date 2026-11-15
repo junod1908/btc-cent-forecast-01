@@ -56,15 +56,24 @@ function forecast(m: CaseMarket): number {
   const t = p.length - 1;
   const x = p[t] as number;
   if (typeof x !== 'number' || !Number.isFinite(x) || x <= 0) throw new Error(`market ${m.id}'s last price is not a positive finite number`);
-  const lx = Math.log(x);
-  const logAt = (j: number): number => Math.log(p[Math.max(0, j)] as number);
+  // Log prices, computed once. A non-positive print (the pool always quotes positive, but the
+  // grid is not ours to trust) carries the previous log price forward, like the recorder does.
+  const logs = new Array<number>(p.length);
+  let prev = 0;
+  for (let j = 0; j <= t; j++) {
+    const v = p[j] as number;
+    prev = typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.log(v) : prev;
+    logs[j] = prev;
+  }
+  const lx = logs[t] as number;
+  const logAt = (j: number): number => logs[Math.max(0, j)] as number;
   const r60 = lx - logAt(t - 60);
   const r240 = lx - logAt(t - 240);
   const r1440 = lx - logAt(t - 1440);
   // EMA of the log price over the whole series, span EMA_SPAN minutes.
-  let ema = Math.log(p[0] as number);
+  let ema = logs[0] as number;
   const alpha = 2 / (EMA_SPAN + 1);
-  for (let j = 1; j <= t; j++) ema += alpha * (Math.log(p[j] as number) - ema);
+  for (let j = 1; j <= t; j++) ema += alpha * ((logs[j] as number) - ema);
   const emaGap = lx - ema;
   const adj = W[0] * r60 + W[1] * r240 + W[2] * r1440 + W[3] * emaGap;
   return price5(x * Math.exp(adj));
