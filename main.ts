@@ -31,6 +31,8 @@ const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 const MIN_PRICE = 0.00001;
 /** The largest grid price below the scorer's exclusive 10,000,000-dollar cap. */
 const MAX_PRICE = 9_999_999.99999;
+/** Cap on the total log adjustment: a tail-risk bound (see forecast). */
+const MAX_ADJ = 0.1;
 
 /** Adjustment weights on [r60, r240, r1440, emaGap], fitted then shrunk to 75%. */
 const W = [-0.02, -0.26, -0.15, 0.17];
@@ -75,7 +77,11 @@ function forecast(m: CaseMarket): number {
   const alpha = 2 / (EMA_SPAN + 1);
   for (let j = 1; j <= t; j++) ema += alpha * ((logs[j] as number) - ema);
   const emaGap = lx - ema;
-  const adj = W[0] * r60 + W[1] * r240 + W[2] * r1440 + W[3] * emaGap;
+  // Bound the total adjustment: the fit's edge lives in ordinary moves, and one extreme
+  // print in the final's unseen window should not drag the guess far from the checkpoint
+  // close. On the practice series |adj| stays under ~0.02, so this never binds there;
+  // it only caps tail risk.
+  const adj = Math.max(-MAX_ADJ, Math.min(MAX_ADJ, W[0] * r60 + W[1] * r240 + W[2] * r1440 + W[3] * emaGap));
   return price5(x * Math.exp(adj));
 }
 
